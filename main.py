@@ -1,4 +1,3 @@
-
 import os
 import logging
 from io import BytesIO
@@ -14,55 +13,89 @@ from telegram.ext import (
 
 TOKEN = os.getenv("8898722164:AAE9BygBSzu23UG8zUjUK1JaZj_00VfzlY8")
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🎨 Привіт! Я Sticker Maker Bot!\n\n"
-        "Надішли мені фотографію — і я зроблю з неї стікер.\n\n"
+        "🎨 Привіт! Це Sticker Maker Bot!\n\n"
+        "📸 Надішли фотографію — зроблю з неї стікер.\n\n"
         "Команди:\n"
-        "/start — меню\n"
+        "/start — головне меню\n"
         "/help — допомога"
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "📸 Надішли фотографію як звичайне фото або файл."
+        "📸 Надішли мені фотографію.\n"
+        "✂️ Я перетворю її на Telegram-стікер!"
     )
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
-    photo = message.photo[-1]
-    file = await context.bot.get_file(photo.file_id)
 
-    data = BytesIO()
-    await file.download_to_memory(out=data)
-    data.seek(0)
+    try:
+        photo = message.photo[-1]
+        telegram_file = await context.bot.get_file(photo.file_id)
 
-    image = Image.open(data).convert("RGBA")
-    image.thumbnail((512, 512))
+        original = BytesIO()
+        await telegram_file.download_to_memory(out=original)
+        original.seek(0)
 
-    output = BytesIO()
-    image.save(output, format="PNG")
-    output.seek(0)
-    output.name = "sticker.png"
+        image = Image.open(original).convert("RGBA")
+        image.thumbnail((512, 512))
 
-    await message.reply_sticker(sticker=output)
+        output = BytesIO()
 
-async def main():
+        quality = 90
+        while quality >= 30:
+            output.seek(0)
+            output.truncate(0)
+
+            image.save(
+                output,
+                format="WEBP",
+                quality=quality,
+                method=6
+            )
+
+            if output.tell() <= 512 * 1024:
+                break
+
+            quality -= 10
+
+        if output.tell() > 512 * 1024:
+            await message.reply_text("❌ Фото завелике для стікера.")
+            return
+
+        output.seek(0)
+        output.name = "sticker.webp"
+
+        await message.reply_sticker(sticker=output)
+
+    except Exception:
+        logging.exception("Sticker creation error")
+        await message.reply_text(
+            "❌ Не вдалося створити стікер. Спробуй інше фото."
+        )
+
+def main():
     if not TOKEN:
-        raise RuntimeError("BOT_TOKEN is missing")
+        raise RuntimeError("BOT_TOKEN не встановлено!")
 
     app = Application.builder().token(TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
+    app.add_handler(
+        MessageHandler(filters.PHOTO, photo_handler)
+    )
 
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-    await app.updater.idle()
+    print("Sticker Maker Bot started!")
 
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    app.run_polling()
+
+if name == "main":
+    main()
